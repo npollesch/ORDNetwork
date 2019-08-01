@@ -1,0 +1,2 @@
+devtools::install_github('thomasp85/gganimate')
+3

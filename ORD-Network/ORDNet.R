@@ -147,11 +147,12 @@ V(ORD)$angle<-ifelse(V(ORD)$angle < -90, V(ORD)$angle+180, V(ORD)$angle)
 # angles for all non-leaves
 V(ORD)$angle[which(is.na(V(ORD)$angle))]<-0
 
-ggraph(ORD, layout = 'dendrogram',circular=T) + 
-  geom_edge_link(color="gray") +
+ggraph(ORD, layout = 'dendrogram') + 
+  geom_edge_arc(color="gray") +
   geom_node_point(aes(colour=color, shape="circle", size=1/CDB))+
-  geom_node_text(aes( x = x*1.15, y=y*1.15,label=shortName, filter=leaf, angle = angle)) + theme_void() +
-  geom_node_text(aes(label=shortName, filter=!leaf, angle = 0), nudge_y=.1) + theme_void() +
+  #geom_node_text(aes( x = x*1.15, y=y*1.15,label=shortName, filter=leaf, angle = angle)) + theme_void() +
+  #geom_node_text(aes(label=shortName, filter=!leaf, angle = 0), nudge_y=.1) + 
+  theme_void() +
   expand_limits(x = c(-1.3, 1.3), y = c(-1.3, 1.3)) + 
   theme(
     legend.position="none",
@@ -196,34 +197,37 @@ for(i in 1:length(ORDG)){
 table(V(ORDG[[length(ORDG)]])$grp)
 table(V(ORDG[[length(ORDG)]])$color)
 
+edge_attr_names(ORDwhite)
+
 ORDwhite<-ORD
-V(ORDwhite)$color<-"white"
+V(ORDwhite)$color<-"gray"
+E(ORDwhite)$width<-.5
 ORDGAll<-create.groups(ORDwhite,"greedy",all=T,ECurve=T)
 par(bg="black")
+layoutsg<-layout
 for(i in 1:length(ORDGAll)){
-  plot(ORDGAll[[i]],vertex.label="",layout=layout_as_tree)}
+  plot(ORDGAll[[i]],vertex.frame.color=V(ORDGAll[[i]])$color,vertex.label="",layout=treelay)}
 table(V(ORDGAll[[length(ORDGAll)]])$grp)
 table(V(ORDGAll[[length(ORDGAll)]])$color)
 
 treelay<-layout_as_tree(ORDwhite)
+layoutrt<-layout.reingold.tilford(ORDwhite)
 ### Animate ###
 library(purrr)
 library(magick)
 library(dplyr)
-
 for(i in 1:length(ORDGAll)){
-  png(paste("images/networks/net_",str_pad(i, width=3, side="left", pad="0"),".png",sep=""))
   par(bg="black")
-  plot(ORDGAll[[i]],vertex.label="",layout=treelay)
+  png(paste("images/networks/net_",str_pad(i, width=3, side="left", pad="0"),".png",sep=""))
+  plot(ORDGAll[[i]],edge.width=1,vertex.frame.color=V(ORDGAll[[i]])$color,vertex.label="",layout=layoutrt,margin=c(.25,0,0,0))
   dev.off()
-}
+  }
+
 list.files(path=paste(getwd(),"/images/networks",sep=""),pattern="*.png",full.names=T) %>%
   map(image_read) %>%
   image_join() %>%
-  image_animate(fps=4) %>%
-  image_write("images/nets_g_tree.gif")
-
-
+  image_animate(fps=5) %>%
+  image_write("images/nets_g_tree_morph.gif",quality=100)
 
 
 
