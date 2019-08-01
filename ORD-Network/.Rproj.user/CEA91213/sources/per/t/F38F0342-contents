@@ -1,0 +1,73 @@
+### 
+## ORD - PROPOSED REORGANIZATION NETWORK
+## This R Script has been created to investigate the network
+## Structure of the proposed ORD reorganization
+### 
+## N.L. Pollesch - pollesch.nathan@epa.gov - ORD/NHEERL/MED
+
+#### Packages and such ####
+library(igraph)
+library(networkD3)
+library(stringr)
+library(readxl)
+
+#### Create Network ####
+## Load Reorg Edge List Workbook
+ORD_REORG <- read_excel("data/ORD-REORG.xlsx") #NLP Created this file by hand from https://intranet.ord.epa.gov/about-ord/proposed-reorganization 
+
+## Extract Edge List Object
+ORDEL<-as.data.frame(ORD_REORG[,1:2])
+
+## Create igraph object
+ORD<-graph_from_edgelist(as.matrix(ORDEL))
+
+## View in networkD3 package
+simpleNetwork(ORDEL)
+
+## View in igraph
+plot(ORD)
+
+## Assign Center/Division/Branch status
+## 1=Center 2=Div 3=Branch
+V(ORD)$CDB<-str_count(names(V(ORD)),"-")+1 
+
+## Create short names
+V(ORD)$longName<-V(ORD)$name
+for(i in 1:126){
+V(ORD)$shortName[i]<-strsplit(names(V(ORD)),split="-")[[i]][V(ORD)$CDB[i]]
+}
+## Assign colors by C/D/B
+CDBcols<-c("seagreen","springgreen","turquoise")
+V(ORD)$color<-CDBcols[V(ORD)$CDB]
+
+## Assign size by C/D/B
+V(ORD)$size<-(9/V(ORD)$CDB)
+
+## Change Edge Arrow size
+E(ORD)$arrow.size<-.3
+
+treelay<-layout_as_tree(ORD)
+3-(1:7/7)
+table(treelay[,2])
+treelaynew<-treelay
+treelaynew[which(treelay[,2]==2),2]<-3-(1:7/7)
+treelaynew[which(treelay[,2]==1),2]<-2-(1:36/36)
+treelaynew[which(treelay[,2]==0),2]<-1-(1:82/82)
+
+#### Visualize ####
+layoutnew=layout.reingold.tilford(ORD,circular=T)*2
+plot(ORD,vertex.label=V(ORD)$shortName,vertex.shape="none",edge.curved=.2,layout=layoutnew,  vertex.label.cex=.8,vertex.label.color=c("Darkblue","blue","steelblue")[V(ORD)$CDB])
+ 
+
+#### THINKING ABOUT DISTANCES ####
+
+View(distances(ORD))
+
+#### EXTRAS ####
+
+## Cluster by short random walks
+wc<-cluster_walktrap(ORD)
+members<-membership(wc)
+ORD_wc<-igraph_to_networkD3(ORD,group=members)
+forceNetwork(Links=ORD_wc$links,Nodes=ORD_wc$nodes,NodeID='name',Group='group')
+

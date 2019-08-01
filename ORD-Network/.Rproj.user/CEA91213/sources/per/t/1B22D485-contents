@@ -1,0 +1,109 @@
+---
+title: "Intro to Networks in R"
+author: "Nate Pollesch & Jennifer Olker - USEPA - MED - Duluth, MN"
+date: "August 27, 2018"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+  pdf_document:
+    keep_tex: yes
+    number_sections: yes
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load packages
+The only package we use is `igraph` which is available on CRAN and maintained by G?bor Cs?rdi.
+
+```{r}
+#install.packages("igraph",repos="http://cran.us.r-project.org")
+library("igraph")
+```
+
+# Build a network from scratch
+For our introductory example, we are going to follow in Euler's footsteps and create a network for the *Seven Bridges of Konigsberg* 
+
+<center>
+![](images/Euler.jpg)
+
+![](images/abstracted-graphs.png)
+</center>
+
+## Edge list approach
+
+We first will work with the undirected version of the network by creating an edge list.  I've labeled the vertices of the network as follows so that they can be more entered into R properly.
+
+<center>
+![](images/bridge-net_vlabels.png)
+</center>
+
+Edge lists are usually organized in a "From" to "To" way.  However, when there is no direction, all that matters is that all edges are represented.  The edge list for the bridges is as follows:
+
+
+"FROM"|"TO"
+----|----
+1|2
+1|2
+1|3
+1|4
+1|4
+2|3
+3|4
+
+```{r EL Build}
+bridge.edgelist<-rbind(c(1,2),c(1,2),c(1,3),c(1,4),c(1,4),c(2,3),c(3,4))
+bridge.edgelist
+
+brgr<-graph_from_edgelist(bridge.edgelist,directed=FALSE)
+plot(brgr)
+```
+
+Note** This plot may or may not have a layout that looks like our image above.  We will discuss layouts later in the workshop.
+
+## Adjacency matrix approach
+An adjacency matrix approach will utilize a matrix.  The matrix dimensions are 'number of vertices' by 'number of vertices' the columns and rows should be arranged so that the first column and first row correspond to the same vertex, the second column and second row correspond to the same vertex, and so on...
+
+V | 1 | 2 | 3 | 4
+---- | ---- | ------ | ----- | -----
+**1**  | 0 | 1 | 1 | 1 
+**2**  | 1 | 0 | 1 | 0
+**3**  | 0 | 0 | 0 | 1
+**4**  | 1 | 0 | 0 | 0
+
+```{r ADJ Build}
+r1<-c(0,1,1,1)
+r2<-c(1,0,1,0)
+r3<-c(0,0,0,1)
+r4<-c(1,0,0,0)
+bridge.adjmat<-rbind(r1,r2,r3,r4)
+
+bridge.adjmat
+
+brgr<-graph_from_adjacency_matrix(bridge.adjmat,mode="plus")
+plot.igraph(brgr)
+
+```
+
+### Demonstrate the equivalence of the approaches
+
+## Adding and removing direction
+
+# Network attribution
+
+## Vertex attribution
+
+We use the term *attribute* to describe any number of properties or values that can be ascribed to vertices in the network.  Some of these attributes, such as `$col` are used for visualization, attributes can be assigned as a result of analyses, such as `$degree`
+
+Some *default* attributes of vertices are: `$name`, `$size`, `$col`, there are default in the sense that when we get to visualization, the plotting routines will utilize these automatically.
+
+## Edge attribution
+
+# Visualization
+
+# Analyses
+
+## Build analysis results into visualization

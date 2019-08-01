@@ -1,0 +1,23 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1562968260795.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "4135906657",
+    "id" : "593384E0",
+    "lastKnownWriteTime" : 1562972620,
+    "last_content_update" : 1562972620567,
+    "path" : "C:/Users/NPollesc/OneDrive - Environmental Protection Agency (EPA)/Projects/ORD-REORG/ORD-Network/ConnectingORD.R",
+    "project_path" : "ConnectingORD.R",
+    "properties" : {
+        "cursorPosition" : "49,0",
+        "scrollLine" : "26",
+        "tempName" : "Untitled1"
+    },
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}

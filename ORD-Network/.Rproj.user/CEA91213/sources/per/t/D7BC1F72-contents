@@ -1,0 +1,58 @@
+
+## Groups of at most two different sizes
+## number of groups as close to number of group members as possible
+group.size<-function(x,n=NA){
+  if(!is.na(n)){
+    extras<-x%%n
+    if(extras==0){print(paste(n," of ",x/n))
+      return(c(n,x/n))}
+    if(extras>0){print(paste(n-x%%n," of ",x%/%n," | ",x%%n, " of ",(x%/%n)+1))
+      return(rbind(c(n-x%%n,x%/%n),c(x%%n,(x%/%n)+1)))}
+  }
+  potgsize<-c(floor(sqrt(x)),ceiling(sqrt(x)))
+  if(potgsize[1]==potgsize[2]){
+    print(paste(potgsize[1]," of ",potgsize[1]))
+    return(c(potgsize[1],potgsize[1]))}
+  ifelse(sqrt(x)<mean(potgsize),gs<-potgsize[1],gs<-potgsize[2])
+  extras<-x-gs*floor(sqrt(x))
+  regs<-(x-(gs+1)*extras)/gs
+  if(regs==0){
+    print(paste(extras," of ",gs+1))
+    return(c(extras,gs+1))}
+  if(regs>0){print(paste((x-(gs+1)*extras)/gs," of ",gs," | ",extras, " of ",gs+1))
+    return(rbind(c(regs,gs),c(extras,gs+1)))}
+}
+
+## returns number of edges that get to be placed based on group sizes
+group.edges.total<-function(x){
+  y<-ifelse(!is.null(dim(x)),sum(choose(x[,2],2)*x[,1]),choose(x[2],2)*x[1])  
+  return(y)
+}
+
+## Creates random groups specified by groups argument based on group.size
+group.edges<-function(groups){
+  peeps<-ifelse(is.null(dim(groups)),groups[1]*groups[2],(groups[1,1]*groups[1,2]+groups[2,1]*groups[2,2]))
+  shuffle<-sample(1:peeps,peeps,replace=F)
+  newEdges<-list()
+  if(is.null(dim(groups))){
+    grpMat<-matrix(shuffle[1:peeps],nrow=groups[1,1])
+    for(i in 1:groups[1,1]){
+      newEdges[[i]]<-as.vector(combn(grpMat[i,],2))}
+  }
+  if(!is.null(dim(groups))){
+    grpMat1<-matrix(shuffle[1:(groups[1,1]*groups[1,2])],nrow=groups[1,1])
+    grpMat2<-matrix(shuffle[((groups[1,1]*groups[1,2])+1):peeps],nrow=groups[2,1])
+    for(i in 1:groups[1,1]){
+      newEdges[[i]]<-as.vector(combn(grpMat1[i,],2))}
+    for(j in 1:groups[2,1]){
+      newEdges[[(j+groups[1,1])]]<-as.vector(combn(grpMat2[j,],2))}
+  }
+  return(newEdges)
+}
+
+## Number of edges by group size
+for(i in 1:126){
+ae[i]<-group.edges.total(group.size(126,i))}
+plot(ae)
+abline(h=group.edges.total(group.size(126)))
+

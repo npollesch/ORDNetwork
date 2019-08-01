@@ -1,0 +1,661 @@
+#~             ,''''''''''''''.
+#~~           /      USEPA     \
+#~   >~',*>  <  FISH TRANSLATOR )
+#~~           \  v0.1 "Maeve"  /
+#~             `..............'
+#~~
+#~  N. Pollesch - pollesch.nathan@epa.gov
+
+###  R SCRIPT TO TEST DELTA SMELT REPARAMETERIZATION
+
+library(FishTranslator)
+library(png)
+
+#### Define new kernel functions for Delta Smelt ####
+
+G.ds<-function(z1,z,pars,date){
+  mu<-pars$zInf[date]-(pars$zInf[date]-z)*exp(-(pars$kappaG[date]))
+  sig<-(.1*mu) #Assumption that variance is .10 of mean growth
+  p.den.grow<-pnorm(z1,mean=mu,sd=sqrt(sig))
+  return(p.den.grow)
+}
+
+### Check on growth trajectories ###
+sizes<-c()
+sizes[1]<-5
+for(i in 2:366){
+  sizes[i]<-pars.ds$zInf-(pars.ds$zInf-sizes[i-1])*exp(-(pars.ds$kappaG))
+}
+
+plot(sizes)
+
+## Define Size dependent Survival
+
+S.ds<-function(z,pars,date){
+  cuts <- c(8, 15, 25, 50)
+  vals <- c(1-0.035,1-0.05,1-0.03,1-0.015,1-0.005)
+  f<-stepfun(cuts,vals)
+  return(f(z))}
+### Check on survival function  ###
+plot(S.ds(sizes,pars.ds,1),type="b")
+1000*prod(S.ds(sizes,pars.ds,1))
+
+
+## Post-spawning mortality survival kernel ##
+View(P)
+
+# P<-function(z1,z,pars,date)
+# {
+#   return(G.ds(z1,z,pars,date)*S.ds(z,pars,date))
+# }
+
+P.ds<-function(z1,z,pars,date){
+  return(G.ds(z1,z,pars,date)*S.ds(z,pars,date)*(1-PB(z,pars,date)))
+}
+
+## Reproduction Kernel modified for a single juvenile & adult growth model (G=G0)
+R.ds<-function(z1,z,pars,date)
+{
+  return((1/2)*PB(z,pars,date)*B(z,pars,date)*G.ds(z1,z=pars$zHatch[date],pars,date)*S.ds(pars$zHatch[date],pars,date))
+}
+
+
+
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~##
+#### Delta Smelt Scenario: Baseline ####
+##~~~~~~~~~~~~~~~~~~~~~~~~~~##
+
+par.ds<-data.frame()
+par.ds<-p.all
+par.ds[1:365,]<-p.all
+
+par.ds$zRepro<-50
+par.ds$hatchPerSpawn<-1907*.5
+par.ds$zHatch<-5
+par.ds$zInf<-100
+par.ds$kappaG<-0.0062
+
+## DEFINE SPAWNING SEASON ##
+spawnSeason<-duration(od("01Feb2018"),od("01May2018"))
+
+par.ds$spawnProb<-0
+par.ds$spawnProb[spawnSeason]<-1/length(spawnSeason)
+
+
+####~ Dicretize the Transition Kernels ####
+dKerns.b.pre<-FT.discretize(L=5,U=100,P=P.ds,R=R.ds,par=par.ds,dates=1:(od("01Feb2018")-1),n=100,order=3)
+dKerns.b.rep<-FT.discretize(L=5,U=100,P=P.ds,R=R.ds,par=par.ds,dates=od("01Feb2018"):od("01May2018"),n=100,order=3)
+dKerns.b.post<-FT.discretize(L=5,U=100,P=P.ds,R=R.ds,par=par.ds,dates=(od("01May2018")+1):365,n=100,order=3)
+
+## Combine Kernels to a single list
+days<-1:31
+for(i in days){
+dKerns.b.rep[[i]]<-dKerns.b.pre[[i]]}
+days<-1:122
+for(i in days){
+  dKerns.b.post[[i]]<-dKerns.b.rep[[i]]
+}
+
+##Note: The FT.discretize function creates NAs for any day before
+## the first 'date' arguement given, but doesn't create list items
+## for those days that occur after the last argument for 'date'
+
+dKerns.b<-dKerns.b.post
+
+## Accumulate to create cumulative annual Kernels
+dKerns.b.c<-FT.d.accumulate(dKerns.b)
+
+####~ Simulate ####
+n0<-FT.populate(dKerns.b[[1]]$mpts,z_min=5.6,z_max=74,N0=100,dist="unif")
+baseline.sim<-FT.simulate(kernList=dKerns.b,initDist=n0)
+
+####~ Results ####
+
+results<-data.frame(scenarios=c("Baseline"))
+
+results$pop[1]<-FT.ts.N(pop.mat=baseline.sim,plotq=F)[365]
+results$ave_z[1]<-FT.ts.zbar(pop.mat=baseline.sim,meshpts=dKerns.b[[1]]$mpts,plotq=F)[365]
+results$ann_eig[1]<-FT.d.eig(dKerns.b.c[[365]]$dK,p=F,v=F)
+eig.b<-FT.d.eig(dKerns.b.c[[365]]$dK,vec=T,plot=F)
+results$ann_ss[1]<-dKerns.b.c[[365]]$mpts%*%(eig.b/sum(eig.b))
+results
+#Distance between distribution and stable size distribution
+dist(rbind(t(eig.b/sum(eig.b)),t(dKerns.b.c[[365]]$dK%*%n0/sum(dKerns.b.c[[365]]$dK%*%n0))))
+dist(rbind(t(eig.b/sum(eig.b)),t(n0)))
+
+
+
+####~ Visualize ####
+## Daily Kernel
+FT.d.plot(dKerns.b[[1]]$dK,dKerns.b[[1]]$mpts,contour=F)
+
+## Annual Kernel
+FT.d.plot(dKerns.b.c[[365]]$dK,dKerns.b.c[[1]]$mpts, title="Annual transition kernel")
+dev.off()
+FT.d.eig(dKerns.b.c[[365]]$dK)
+
+## Dominant Eigenvalues
+FT.d.eig.ts(dKerns.b,plot=T)
+
+## Plot simulated size distribtuion vs stable size
+plot(dKerns.b.c[[365]]$dK%*%n0/sum(dKerns.b.c[[365]]$dK%*%n0),type="l",col="red", xlab="Size Class",ylab="Class Density")# Distribtion on last day of year using accumulated kernel
+lines(eig.b/sum(eig.b),type="l",col="blue")# Eigenvector associated to dominant eigenvalue
+legend("topright",legend=c("Simulated Size Dist.","Stable Size Dist."),col=c("red","blue"),pch="-",cex=.75)
+
+## Plot Daily Size Dists
+cp1<-colorRampPalette(c("LightBlue","Lightblue"))(od("1Feb2018")-1)
+cp2<-colorRampPalette(c("Green","Green"))(od("1May0218")-od("1Feb2018"))
+cp3<-colorRampPalette(c("Gray","Gray"))(365-od("1May2018"))
+cols<-c(cp1,cp2,cp3)
+length(cols)
+
+plot(eig.b/sum(eig.b),xlab="Size Class",ylab="Class Density",col="white",main="Size Distributions")
+for(i in 1:365){
+  lines(baseline.sim[,i]/sum(baseline.sim[,i]),type="l",col=cols[i])
+}
+lines(n0/sum(n0),type="l",col="Orange", lty=2, lwd=2)
+lines(eig.b/sum(eig.b),xlab="Size Class",ylab="Class Density",col="darkRed",lty=2,lwd=2)
+legend("top",bty="n",legend=c("Initial Dist.","Pre-Repro.","Repro. Season","Post-Repro.","Stable Dist."),col=c("orange","lightblue","lightgreen","gray","red"),lwd=c(2,1,1,1,2),lty=c(2,1,1,1,2),cex=.75)
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+#### Exposure Winter and Batchspawning ####
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+
+#### ~APRIL~ ####
+
+par.e<-data.frame()
+par.e<-p.all
+par.e[1:365,]<-p.all
+
+## Assign batchspawning probabilities
+par.e$spawnProb<-batchSpawnProb # Note: Uses same batchSpawnProb result from Scenario 2 for consistency
+
+## Assign winter days
+winterOds<-duration(od("21Dec2018"),od("20March2019"))
+par.e$isWinter[winterOds]<-TRUE
+
+## Assign exposure effect
+exps90<-Exposure90Day
+
+expLength<-length(exps90$Day)
+exposureOds<-duration(od("1April2018"),od("1April2018")+(expLength-1))
+par.e$areExposed<-FALSE
+par.e$areExposed[exposureOds]<-TRUE
+par.e$survivalDecrement<-0
+par.e$survivalDecrement[exposureOds]<-exps90$decrement_fluctuating
+sD.april<-par.e$survivalDecrement
+
+####~ Dicretize the Transition Kernels ####
+dKerns.e<-FT.discretize(L=5.6,U=74,P=P,R=R,par=par.e,dates=1:365,n=100,order=3)
+dKerns.e.c<-FT.d.accumulate(dKerns.e)
+
+####~ Simulate ####
+n0<-FT.populate(dKerns.e[[1]]$mpts,z_min=5.6,z_max=74,N0=100,dist="unif")
+exposure.sim<-FT.simulate(kernList=dKerns.e,initDist=n0)
+
+####~ Results ####
+results$pop[4]<-FT.ts.N(pop.mat=exposure.sim,plotq=F)[365]
+results$ave_z[4]<-FT.ts.zbar(pop.mat=exposure.sim,meshpts=dKerns.e[[1]]$mpts,plotq=F)[365]
+eig.e<-FT.d.eig(dKerns.e.c[[365]]$dK,vec=T,plot=F)
+results$ann_eig[4]<-FT.d.eig(dKerns.e.c[[365]]$dK,vec=F,plot=F)
+results$ann_ss[4]<-dKerns.e[[1]]$mpts%*%(eig.e/sum(eig.e))
+#Distance between distribution and stable size distribution
+dist(rbind(t(eig.e/sum(eig.e)),t(dKerns.e.c[[365]]$dK%*%n0/sum(dKerns.e.c[[365]]$dK%*%n0))))
+dist(rbind(t(eig.e/sum(eig.e)),t(n0)))
+
+## Daily pop and avg size
+FT.ts.N.zbar(exposure.sim,dKerns.e.c[[1]]$mpts)
+rect(od("1April2018"),0,od("1April2018")+90,100,col=rgb(1,0,0,1/4))
+rect(od("22May2018"),0,od("22August2018"),100,col=rgb(0,1,0,1/4))
+rect(0,0,od("20March2018"),100,col=rgb(0,0,1,1/4))
+rect(od("21Dec2018"),0,365,100,col=rgb(0,0,1,1/4))
+#rect(300,0,310,100,col=rgb(1/2,1/2,0,1/3)) The overlap color between red and green for exposure
+
+#abline(v=od("1April2018"),col="red")
+#abline(v=od("1April2018")+90,col="red")
+#axis(1,at=c(od("1April2018")),labels="E",col="red")
+#axis(1,at=c(od("1April2018")+90),labels="E",col="red")
+
+#abline(v=od("21Dec2018"),col="blue")
+#abline(v=od("20March2019"),col="blue")
+#axis(1,at=c(od("21Dec2018")),labels="W",col="blue")
+#axis(1,at=c(od("20March2019")),labels="W",col="blue")
+
+#abline(v=od("22May2018"),col="green")
+#abline(v=od("22August2018"),col="green")
+#axis(1,at=c(od("22May2018")),labels="R",col="green")
+#axis(1,at=c(od("22August2018")),labels="R",col="green")
+
+
+
+
+#### ~MAY~ ####
+## Assign exposure effect
+exps90<-Exposure90Day
+expLength<-length(exps90$Day)
+exposureOds<-duration(od("1May2018"),od("1May2018")+(expLength-1))
+par.e$areExposed<-FALSE
+par.e$areExposed[exposureOds]<-TRUE
+par.e$survivalDecrement<-0
+par.e$survivalDecrement[exposureOds]<-exps90$decrement_fluctuating
+sD.may<-par.e$survivalDecrement
+
+####~ Dicretize the Transition Kernels ####
+dKerns.e.may<-FT.discretize(L=5.6,U=74,P=P,R=R,par=par.e,dates=1:365,n=100,order=3)
+dKerns.e.may.c<-FT.d.accumulate(dKerns.e.may)
+
+####~ Simulate ####
+n0<-FT.populate(dKerns.e.may[[1]]$mpts,z_min=5.6,z_max=74,N0=100,dist="unif")
+exposure.sim.may<-FT.simulate(kernList=dKerns.e.may,initDist=n0)
+
+####~ Results ####
+results$pop[5]<-FT.ts.N(pop.mat=exposure.sim.may,plotq=F)[365]
+results$ave_z[5]<-FT.ts.zbar(pop.mat=exposure.sim.may,meshpts=dKerns.e.may[[1]]$mpts,plotq=F)[365]
+eig.e.may<-FT.d.eig(dKerns.e.may.c[[365]]$dK,vec=T,plot=F)
+results$ann_eig[5]<-FT.d.eig(dKerns.e.may.c[[365]]$dK,vec=F,plot=F)
+results$ann_ss[5]<-dKerns.e.may[[1]]$mpts%*%(eig.e.may/sum(eig.e.may))
+
+#### ~JUNE~ ####
+
+## Assign exposure effect
+exps90<-Exposure90Day
+expLength<-length(exps90$Day)
+exposureOds<-duration(od("1June2018"),od("1June2018")+(expLength-1))
+par.e$areExposed<-FALSE
+par.e$areExposed[exposureOds]<-TRUE
+par.e$survivalDecrement<-0
+par.e$survivalDecrement[exposureOds]<-exps90$decrement_fluctuating
+sD.june<-par.e$survivalDecrement
+
+####~ Dicretize the Transition Kernels ####
+dKerns.e.june<-FT.discretize(L=5.6,U=74,P=P,R=R,par=par.e,dates=1:365,n=100,order=3)
+dKerns.e.june.c<-FT.d.accumulate(dKerns.e.june)
+
+####~ Simulate ####
+n0<-FT.populate(dKerns.e.june[[1]]$mpts,z_min=5.6,z_max=74,N0=100,dist="unif")
+exposure.sim.june<-FT.simulate(kernList=dKerns.e.june,initDist=n0)
+
+####~ Results ####
+results$pop[6]<-FT.ts.N(pop.mat=exposure.sim.june,plotq=F)[365]
+results$ave_z[6]<-FT.ts.zbar(pop.mat=exposure.sim.june,meshpts=dKerns.e.june[[1]]$mpts,plotq=F)[365]
+eig.e.june<-FT.d.eig(dKerns.e.june.c[[365]]$dK,vec=T,plot=F)
+results$ann_eig[6]<-FT.d.eig(dKerns.e.june.c[[365]]$dK,vec=F,plot=F)
+results$ann_ss[6]<-dKerns.e.june[[1]]$mpts%*%(eig.e.june/sum(eig.e.june))
+
+#### ~JULY~ ####
+
+expLength<-length(exps90$Day)
+exposureOds<-duration(od("1july2018"),od("1july2018")+(expLength-1))
+par.e$areExposed<-FALSE
+par.e$areExposed[exposureOds]<-TRUE
+par.e$survivalDecrement<-0
+par.e$survivalDecrement[exposureOds]<-exps90$decrement_fluctuating
+sD.july<-par.e$survivalDecrement
+
+####~ Dicretize the Transition Kernels ####
+dKerns.e.july<-FT.discretize(L=5.6,U=74,P=P,R=R,par=par.e,dates=1:365,n=100,order=3)
+dKerns.e.july.c<-FT.d.accumulate(dKerns.e.july)
+
+####~ Simulate ####
+n0<-FT.populate(dKerns.e.july[[1]]$mpts,z_min=5.6,z_max=74,N0=100,dist="unif")
+exposure.sim.july<-FT.simulate(kernList=dKerns.e.july,initDist=n0)
+
+####~ Results ####
+results$pop[7]<-FT.ts.N(pop.mat=exposure.sim.july,plotq=F)[365]
+results$ave_z[7]<-FT.ts.zbar(pop.mat=exposure.sim.july,meshpts=dKerns.e.july[[1]]$mpts,plotq=F)[365]
+eig.e.july<-FT.d.eig(dKerns.e.july.c[[365]]$dK,vec=T,plot=F)
+results$ann_eig[7]<-FT.d.eig(dKerns.e.july.c[[365]]$dK,vec=F,plot=F)
+results$ann_ss[7]<-dKerns.e.july[[1]]$mpts%*%(eig.e.july/sum(eig.e.july))
+
+#### ~AUGUST~ ####
+expLength<-length(exps90$Day)
+exposureOds<-duration(od("1august2018"),od("1august2018")+(expLength-1))
+par.e$areExposed<-FALSE
+par.e$areExposed[exposureOds]<-TRUE
+exps90$decrement_mean
+par.e$survivalDecrement<-0
+par.e$survivalDecrement[exposureOds]<-exps90$decrement_fluctuating
+sD.august<-par.e$survivalDecrement
+
+####~ Dicretize the Transition Kernels ####
+dKerns.e.august<-FT.discretize(L=5.6,U=74,P=P,R=R,par=par.e,dates=1:365,n=100,order=3)
+dKerns.e.august.c<-FT.d.accumulate(dKerns.e.august)
+
+####~ Simulate ####
+n0<-FT.populate(dKerns.e.august[[1]]$mpts,z_min=5.6,z_max=74,N0=100,dist="unif")
+exposure.sim.august<-FT.simulate(kernList=dKerns.e.august,initDist=n0)
+
+####~ Results ####
+results$pop[8]<-fexp<-FT.ts.N(pop.mat=exposure.sim.august,plotq=F)[365]
+results$ave_z[8]<-FT.ts.zbar(pop.mat=exposure.sim.august,meshpts=dKerns.e.august[[1]]$mpts,plotq=F)[365]
+eig.e.august<-FT.d.eig(dKerns.e.august.c[[365]]$dK,vec=T,plot=F)
+results$ann_eig[8]<-FT.d.eig(dKerns.e.august.c[[365]]$dK,vec=F,plot=F)
+results$ann_ss[8]<-dKerns.e.august[[1]]$mpts%*%(eig.e.august/sum(eig.e.august))
+
+#### ~AUGUST-Mean~ ####
+expLength<-length(exps90$Day)
+exposureOds<-duration(od("1august2018"),od("1august2018")+(expLength-1))
+par.e$areExposed<-FALSE
+par.e$areExposed[exposureOds]<-TRUE
+par.e$survivalDecrement<-0
+par.e$survivalDecrement[exposureOds]<-exps90$decrement_mean
+sD.august.m<-par.e$survivalDecrement
+
+####~ Dicretize the Transition Kernels ####
+dKerns.e.august.m<-FT.discretize(L=5.6,U=74,P=P,R=R,par=par.e,dates=1:365,n=100,order=3)
+dKerns.e.august.m.c<-FT.d.accumulate(dKerns.e.august.m)
+
+####~ Simulate ####
+n0<-FT.populate(dKerns.e.august.m[[1]]$mpts,z_min=5.6,z_max=74,N0=100,dist="unif")
+exposure.sim.august.m<-FT.simulate(kernList=dKerns.e.august.m,initDist=n0)
+
+####~ Results ####
+results$pop[9]<-meanexp<-FT.ts.N(pop.mat=exposure.sim.august.m,plotq=F)[365]
+results$ave_z[9]<-FT.ts.zbar(pop.mat=exposure.sim.august.m,meshpts=dKerns.e.august.m[[1]]$mpts,plotq=F)[365]
+eig.e.august.m<-FT.d.eig(dKerns.e.august.m.c[[365]]$dK,vec=T,plot=F)
+results$ann_eig[9]<-FT.d.eig(dKerns.e.august.m.c[[365]]$dK,vec=F,plot=F)
+results$ann_ss[9]<-dKerns.e.august.m[[1]]$mpts%*%(eig.e.august.m/sum(eig.e.august.m))
+
+#### ~AUGUST-Max~ ####
+expLength<-length(exps90$Day)
+exposureOds<-duration(od("1august2018"),od("1august2018")+(expLength-1))
+par.e$areExposed<-FALSE
+par.e$areExposed[exposureOds]<-TRUE
+par.e$survivalDecrement<-0
+par.e$survivalDecrement[exposureOds]<-exps90$decrement_high
+sD.august.x<-par.e$survivalDecrement
+
+####~ Dicretize the Transition Kernels ####
+dKerns.e.august.x<-FT.discretize(L=5.6,U=74,P=P,R=R,par=par.e,dates=1:365,n=100,order=3)
+dKerns.e.august.x.c<-FT.d.accumulate(dKerns.e.august.x)
+
+####~ Simulate ####
+n0<-FT.populate(dKerns.e.august.x[[1]]$mpts,z_min=5.6,z_max=74,N0=100,dist="unif")
+exposure.sim.august.x<-FT.simulate(kernList=dKerns.e.august.x,initDist=n0)
+
+####~ Results ####
+results$pop[10]<-maxexp<-FT.ts.N(pop.mat=exposure.sim.august.x,plotq=F)[365]
+results$ave_z[10]<-FT.ts.zbar(pop.mat=exposure.sim.august.x,meshpts=dKerns.e.august.x[[1]]$mpts,plotq=F)[365]
+eig.e.august.x<-FT.d.eig(dKerns.e.august.x.c[[365]]$dK,vec=T,plot=F)
+results$ann_eig[10]<-FT.d.eig(dKerns.e.august.x.c[[365]]$dK,vec=F,plot=F)
+results$ann_ss[10]<-dKerns.e.august.x[[1]]$mpts%*%(eig.e.august.x/sum(eig.e.august.x))
+
+#### ~AUGUST-Threshold~ ####
+expLength<-length(exps90$Day)
+exposureOds<-duration(od("1august2018"),od("1august2018")+(expLength-1))
+par.e$areExposed<-FALSE
+par.e$areExposed[exposureOds]<-TRUE
+par.e$juvMultiplier<-1
+par.e$survivalDecrement<-0
+par.e$survivalDecrement[exposureOds]<-.5*FT.LC50(exps90$ppm_fluctuating,2.5)
+
+
+####~ Dicretize the Transition Kernels ####
+dKerns.e.august.t<-FT.discretize(L=5.6,U=74,P=P,R=R,par=par.e,dates=1:365,n=100,order=3)
+dKerns.e.august.t.c<-FT.d.accumulate(dKerns.e.august.t)
+
+####~ Simulate ####
+n0<-FT.populate(dKerns.e.august.t[[1]]$mpts,z_min=5.6,z_max=74,N0=100,dist="unif")
+exposure.sim.august.t<-FT.simulate(kernList=dKerns.e.august.t,initDist=n0)
+
+####~ Results ####
+#results<-rbind(results,rep(NA,9))
+results$pop[13]<-maxexp<-FT.ts.N(pop.mat=exposure.sim.august.t,plotq=F)[365]
+results$ave_z[13]<-FT.ts.zbar(pop.mat=exposure.sim.august.t,meshpts=dKerns.e.august.t[[1]]$mpts,plotq=F)[365]
+eig.e.august.t<-FT.d.eig(dKerns.e.august.t.c[[365]]$dK,vec=T,plot=F)
+results$ann_eig[13]<-FT.d.eig(dKerns.e.august.t.c[[365]]$dK,vec=F,plot=F)
+results$ann_ss[13]<-dKerns.e.august.t[[1]]$mpts%*%(eig.e.august.t/sum(eig.e.august.t))
+
+####~Visualize ####
+
+
+FT.ts.N.zbar(exposure.sim.august.t,dKerns.e.august.t.c[[1]]$mpts)
+rect(od("1August2018"),0,od("1August2018")+90,100,col=rgb(1,0,0,1/4))
+rect(od("22May2018"),0,od("22August2018"),100,col=rgb(0,1,0,1/4))
+rect(0,0,od("20March2018"),100,col=rgb(0,0,1,1/4))
+rect(od("21Dec2018"),0,365,100,col=rgb(0,0,1,1/4))
+
+
+#### EXPOSURE WITH DIFFERENTIAL JUVENILE SURVIVAL ####
+#### ~JULY-Juve~ ####
+expLength<-length(exps90$Day)
+exposureOds<-duration(od("1July2018"),od("1July2018")+(expLength-1))
+par.e$areExposed<-FALSE
+par.e$areExposed[exposureOds]<-TRUE
+par.e$juvMultiplier<-2
+exps90$decrement_mean
+par.e$survivalDecrement<-0
+par.e$survivalDecrement[exposureOds]<-exps90$decrement_fluctuating
+sD.july.juv<-par.e$survivalDecrement
+
+
+
+
+
+
+####~ Dicretize the Transition Kernels ####
+dKerns.e.july.juv<-FT.discretize(L=5.6,U=74,P=P,R=R,par=par.e,dates=1:365,n=100,order=3)
+dKerns.e.july.juv.c<-FT.d.accumulate(dKerns.e.july.juv)
+
+####~ Simulate ####
+n0<-FT.populate(dKerns.e.july.juv[[1]]$mpts,z_min=5.6,z_max=74,N0=100,dist="unif")
+exposure.sim.july.juv<-FT.simulate(kernList=dKerns.e.july.juv,initDist=n0)
+
+
+####~ Results ####
+results$pop[11]<-fexp<-FT.ts.N(pop.mat=exposure.sim.july.juv,plotq=F)[365]
+results$ave_z[11]<-FT.ts.zbar(pop.mat=exposure.sim.july.juv,meshpts=dKerns.e.july.juv[[1]]$mpts,plotq=F)[365]
+eig.e.july.juv<-FT.d.eig(dKerns.e.july.juv.c[[365]]$dK,vec=T,plot=F)
+results$ann_eig[11]<-FT.d.eig(dKerns.e.july.juv.c[[365]]$dK,vec=F,plot=F)
+results$ann_ss[11]<-dKerns.e.july.juv[[1]]$mpts%*%(eig.e.july.juv/sum(eig.e.july.juv))
+
+#### ~AUGUST-Juve~ ####
+expLength<-length(exps90$Day)
+exposureOds<-duration(od("1august2018"),od("1august2018")+(expLength-1))
+par.e$areExposed<-FALSE
+par.e$areExposed[exposureOds]<-TRUE
+par.e$juvMultiplier<-2
+par.e$survivalDecrement<-0
+par.e$survivalDecrement[exposureOds]<-exps90$decrement_fluctuating
+sD.august.juv<-par.e$survivalDecrement
+
+####~ Dicretize the Transition Kernels ####
+dKerns.e.august.juv<-FT.discretize(L=5.6,U=74,P=P,R=R,par=par.e,dates=1:365,n=100,order=3)
+dKerns.e.august.juv.c<-FT.d.accumulate(dKerns.e.august.juv)
+
+####~ Simulate ####
+n0<-FT.populate(dKerns.e.august.juv[[1]]$mpts,z_min=5.6,z_max=74,N0=100,dist="unif")
+exposure.sim.august.juv<-FT.simulate(kernList=dKerns.e.august.juv,initDist=n0)
+
+####~ Results ####
+results$pop[12]<-fexp<-FT.ts.N(pop.mat=exposure.sim.august.juv,plotq=F)[365]
+results$ave_z[12]<-FT.ts.zbar(pop.mat=exposure.sim.august.juv,meshpts=dKerns.e.august.juv[[1]]$mpts,plotq=F)[365]
+eig.e.august.juv<-FT.d.eig(dKerns.e.august.juv.c[[365]]$dK,vec=T,plot=F)
+results$ann_eig[12]<-FT.d.eig(dKerns.e.august.juv.c[[365]]$dK,vec=F,plot=F)
+results$ann_ss[12]<-dKerns.e.august.juv[[1]]$mpts%*%(eig.e.august.juv/sum(eig.e.august.juv))
+
+#### ~VISUALIZING EXPOSURE RESULTS~ ####
+
+####~ PLOT COMPARE ASSUMPTIONS ###
+par(mar = c(5,5,2,5))
+plot(-sD.august,ylim=c(-.40,0),lwd=1,lty=2,pch=1,col="Blue",type="b",ylab="Survival decrement",xlab="Ordinal day",main="Exposure Scenarios")
+points(-sD.august.m,lwd=1,lty=2,pch=1,col="Green",type="b")
+points(-sD.august.t,lwd=1,lty=2,pch=1,col="Red",type="b")
+legend("left",bty="n",legend=c("Population","Survival Decrement","Constant Max","Fluctuating","Constant Mean","No exposure"),col=c("black","black","red","blue","green","gray"),lty=c(1,2,1,1,1,1),lwd=c(3,1,3,3,3,3),pch=c(NA,1,NA,NA,NA,NA),cex=.75)
+par(new=T)
+plot(FT.ts.N(pop.mat=winter.sim,plotq=F),axes=F,xlab=NA,ylab=NA,col="gray",ylim=c(0,43000),type="l",lwd=3)
+lines(FT.ts.N(pop.mat=exposure.sim.august,plotq=F),col="Blue",lwd=3)
+lines(FT.ts.N(pop.mat=exposure.sim.august.m,plotq=F),col="Green",lwd=3)
+lines(FT.ts.N(pop.mat=exposure.sim.august.t,plotq=F),col="Red",lwd=3)
+axis(side=4)
+mtext(side=4,line=3,'Population (# of Individuals)')
+
+par(mar = c(5,5,2,5))
+plot(-exps90$decrement_fluctuating,ylim=c(-.4,0),lwd=1,lty=2,type="b",col="Blue",ylab="Survival decrement",xlab="Day",main="90-day Exposure Profiles and Effects")
+points(-exps90$decrement_high,lwd=1,lty=2,pch=1,col="red",type="b")
+points(-exps90$decrement_mean,lwd=1,lty=2,pch=1,col="green",type="b")
+par(new=T)
+plot(exps90$ppm_fluctuating,lwd=2,type="l",ylim=c(0,5),col="blue",axes=F,xlab=NA,ylab=NA)
+lines(exps90$ppm_high,lwd=2,col="red")
+lines(exps90$ppm_mean,lwd=2,col="green")
+axis(side=4)
+mtext(side=4,line=3,'Concentration (ppm)')
+legend(x=40,y=3,bty="n",legend=c("Population","Survival Decrement","Constant Max","Fluctuating","Constant Mean"),col=c("black","black","red","blue","green"),lty=c(1,2,1,1,1,1),lwd=c(3,1,3,3,3,3),pch=c(NA,1,NA,NA,NA,NA),cex=.75)
+
+####~ PLOT EXPOSURE TIMINGS ####
+par(mar = c(5,5,2,5))
+plot(-sD.april,ylim=c(-.15,0),type="l",lwd=1,lty=2,ylab="Survival decrement",xlab="Ordinal day",main="Exposure Scenarios",col="red")
+lines(-sD.may,type="l",lwd=1,lty=2,col="orange")
+lines(-sD.june,type="l",lwd=1,lty=2,col="green")
+lines(-sD.july,type="l",lwd=1,lty=2,col="blue")
+lines(-sD.august,type="l",lwd=1,lty=2,col="purple")
+legend("left",bty="n",legend=c("Population","Survival Decrement","April 1","May 1","June 1","July 1","August 1","No exposure"),col=c("black","black","red","orange","green","blue","purple","gray"),lty=c(1,2,1,1,1,1,1,1),lwd=c(2,1,2,2,2,2,2,2),cex=.75)
+par(new=T)
+plot(FT.ts.N(pop.mat=winter.sim,plotq=F),lwd=3,col="gray",ylim=c(0,43000),type="l",axes=F,xlab=NA,ylab=NA)
+lines(FT.ts.N(pop.mat=exposure.sim.august,plotq=F),lwd=3,col="purple")
+lines(FT.ts.N(pop.mat=exposure.sim.july,plotq=F),lwd=3,col="blue")
+lines(FT.ts.N(pop.mat=exposure.sim.june,plotq=F),lwd=3,col="green")
+lines(FT.ts.N(pop.mat=exposure.sim.may,plotq=F),lwd=3,col="orange")
+lines(FT.ts.N(pop.mat=exposure.sim,plotq=F),lwd=3,col="red")
+axis(side=4)
+mtext(side=4,line=3,'Population (# of Individuals')
+
+#### SCENARIO COMPARISONS ####
+View(results)
+results$pop_per_bs<-results$pop/results$pop[2]
+results$ave_z_per_bs<-results$ave_z/results$ave_z[2]
+results$ann_eig_per_bs<-results$ann_eig/results$ann_eig[2]
+results$ann_ss_per_bs<-results$ann_ss/results$ann_ss[2]
+
+#### WINTER STARTING DATE EXPLORATIONS ####
+## Explore alternate starting dates
+ssd_winter<-list()
+t=2
+for(i in tail(od(months),-1)){
+dKerns.w.c<-FT.d.accumulate(dKerns.w,index=c(i:365,1:(i-1)))
+ssd_winter[[t]]<-FT.d.eig(dKerns.w.c[[365]]$dK,vec=T,plot=F)
+t=t+1}
+
+dKerns.w.c<-FT.d.accumulate(dKerns.w,index=c(1:365))
+ssd_winter[[1]]<-FT.d.eig(dKerns.w.c[[365]]$dK,vec=T,plot=F)
+
+#par(mar = c(5, 4, 1.4, 0.2))
+dev.off()
+plot(ssd_winter[[1]]/sum(ssd_winter[[1]]),type="b",pch=1,cex=.6,col=rainbow(12)[1],xlab="Size class",ylab="Normalized Density",main="Stable Size Distributions by Start Date",ylim=c(0,.28))
+for(i in 2:12){
+lines(ssd_winter[[i]]/sum(ssd_winter[[i]]),type="b",pch=i,cex=.6,col=rainbow(12)[i])
+}
+legend("topright",legend=c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"), pch=1:12,
+       col=rainbow(12),
+       horiz=F, bty='n', cex=0.85,xjust=1,inset=c(-.05,0))
+
+
+## Visualize
+plot(eig.s/sum(eig.s),xlab="Size Class",ylab="Class Density",col="white",main="Size Distributions")
+for(i in 1:11){
+lines(batchspawn.sim[,i]/sum(batchspawn.sim[,i]),type="l",col=cols[i])
+}
+lines(n0/sum(n0),type="l",col="Orange", lty=2, lwd=2)
+lines(eig.s/sum(eig.s),xlab="Size Class",ylab="Class Density",col="red",lty=2,lwd=2)
+legend("top",bty="n",legend=c("Initial Dist.","Pre-Repro.","Repro. Season","Post-Repro.","Stable Dist."),col=c("orange","lightblue","lightgreen","gray","red"),lwd=c(2,1,1,1,2),lty=c(2,1,1,1,2),cex=.75)
+
+
+
+
+#### TEST PLOTS FOR SIZE-SCALED FISH! ####
+#par(mar = c(5,5,2,5))
+#plot(FT.ts.zbar(pop.mat=batchspawn.sim,meshpts=dKerns.s[[1]]$mpts,plotq=F))
+#par(new=T)
+#icon<-readPNG('images/fhm.png')
+#axis(side=4)
+#mtext(side=4,line=3,'')
+#rasterImage(icon,330,10,365,20)
+
+#### CREATE ANIMATED OUTPUTS ####
+## Create a surface visualization
+#spec.cols<-colorRampPalette(c('red','yellow','green','blue','black'))
+#i=365;
+#hist3D(z=as.matrix(winter.sim),theta=-220,phi=20,main=paste("Discretized size distribution of individuals, \n from Time t=1 to ",i,sep=""),xlab="Size Class",ylab="Time (t)",zlab="No. Individuals",col=rev(spec.cols(100)))
+
+##create an animated surface gif (uses FT_functions.R source file)
+#FT.viz.surf(winter.sim,filename="winter_surf")
+
+#FT.viz.surf(exposure.sim,filename="exposure_surf")
+
+
+# ## FT.viz.dist() creates a visualization of the size distributions for each time step.
+# ## The heights are set to the max number of indiviudals across all times and all sizes.
+# ## Output is sent to a folder called "images" that must be present in the working directory
+# FT.viz.dist<-function(pop.mat,fps=5,loop=0,rmvfiles=T){
+#   if(as.numeric(dev.cur())>1){dev.off()}
+#   for(i in 1:dim(pop.mat)[2]){
+#     png(paste("plot_images/plot_",str_pad(i, width=nchar(dim(pop.mat)[2]), side="left", pad="0"),".png",sep=""))
+#     plot(n0/sum(n0),type="l",col="Orange", lty=2, lwd=2)
+#     lines(eig.s/sum(eig.s),xlab="Size Class",ylab="Class Density",col="red",lty=2,lwd=2)
+#     for(j in 1:i){
+#     lines(pop.mat[,j]/sum(pop.mat[,j]),type="l",main=paste("Discretized Size Distribution, n(z,t):\n Time (t)=",i,"/",dim(pop.mat)[2],"\n No of Individuals=",floor(sum(pop.mat[,i])),sep=""),ylab="Individuals",xlab="Size-classes",xlim=c(0,dim(pop.mat)[1]),ylim=c(0,max(pop.mat)))
+#     }
+#     dev.off()
+#   }
+#   list.files(path=paste(getwd(),"/plot_images",sep=""),pattern="*.png",full.names=T) %>%
+#     map(image_read) %>%
+#     image_join() %>%
+#     image_animate(fps=5) %>%
+#     image_write("distribution_evolution.gif")
+#     invisible(do.call(file.remove, list(list.files("plot_images/", full.names = TRUE))))
+#
+# }
+
+#### Animate Daily Size Distributions ####
+
+#### ~Batch Spawning ####
+pop.mat=baseline.sim
+
+if(as.numeric(dev.cur())>1){dev.off()}
+for(i in 1:dim(pop.mat)[2]){
+  png(paste("plot_images/plot_",str_pad(i, width=nchar(dim(pop.mat)[2]), side="left", pad="0"),".png",sep=""))
+  plot(eig.b/sum(eig.b),col="white", main=paste("Daily Size Distribution, n(z,t):\n Time (t)=",i,"/",dim(pop.mat)[2],"\n Population=",floor(sum(pop.mat[,i])),sep=""),ylab="Density (normalized)",xlab="Size Class")
+  lines(n0/sum(n0),type="l",col="Orange", lty=2, lwd=2)
+  for(j in 1:i){
+    lines(pop.mat[,j]/sum(pop.mat[,j]),type="l",col=cols[j])
+  }
+  lines(pop.mat[,i]/sum(pop.mat[,i]),type="l",col="black")
+  lines(eig.b/sum(eig.b),xlab="Size Class",ylab="Class Density",col="red",lty=2,lwd=2)
+  dev.off()
+}
+list.files(path=paste(getwd(),"/plot_images",sep=""),pattern="*.png",full.names=T) %>%
+  map(image_read) %>%
+  image_join() %>%
+  image_animate(fps=5) %>%
+  image_write("distribution_evolution_bs.gif")
+invisible(do.call(file.remove, list(list.files("plot_images/", full.names = TRUE))))
+
+#
+#### ~Winter ####
+
+pop.mat=winter.sim
+cp1<-colorRampPalette(c("gray","gray"))(od("22May2018")-od("20March2019"))
+cp2<-colorRampPalette(c("Green","Green"))(od("22Aug0218")-od("22May2018"))
+cp3<-colorRampPalette(c("Gray","Gray"))(od("21Dec2018")-od("22Aug2018"))
+cols.w<-c(rep("blue",od("20March2019")),cp1,cp2,cp3,rep("blue",365-od("21Dec2018")))
+
+if(as.numeric(dev.cur())>1){dev.off()}
+for(i in 1:dim(pop.mat)[2]){
+  png(paste("plot_images/plot_",str_pad(i, width=nchar(dim(pop.mat)[2]), side="left", pad="0"),".png",sep=""))
+  plot(eig.w/sum(eig.w),col="white", main=paste("Daily Size Distribution, n(z,t):\n Time (t)=",i,"/",dim(pop.mat)[2],"\n Population=",floor(sum(pop.mat[,i])),sep=""),ylab="Density (normalized)",xlab="Size Class")
+  lines(n0/sum(n0),type="l",col="Orange", lty=2, lwd=2)
+  for(j in 1:i){
+    lines(pop.mat[,j]/sum(pop.mat[,j]),type="l",col=cols.w[j])
+  }
+  lines(pop.mat[,i]/sum(pop.mat[,i]),type="l",col="black")
+  lines(eig.w/sum(eig.w),xlab="Size Class",ylab="Class Density",col="red",lty=2,lwd=2)
+  dev.off()
+}
+list.files(path=paste(getwd(),"/plot_images",sep=""),pattern="*.png",full.names=T) %>%
+  map(image_read) %>%
+  image_join() %>%
+  image_animate(fps=5) %>%
+  image_write("distribution_evolution_winter.gif")
+invisible(do.call(file.remove, list(list.files("plot_images/", full.names = TRUE))))
+

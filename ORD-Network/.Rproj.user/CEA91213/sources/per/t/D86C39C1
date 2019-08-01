@@ -1,0 +1,23 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1562940657660.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "4045870281",
+    "id" : "D86C39C1",
+    "lastKnownWriteTime" : 1562969419,
+    "last_content_update" : 1562969419982,
+    "path" : "C:/Users/NPollesc/OneDrive - Environmental Protection Agency (EPA)/Projects/ORD-REORG/ORD-Network/ORDNet.R",
+    "project_path" : "ORDNet.R",
+    "properties" : {
+        "cursorPosition" : "116,0",
+        "scrollLine" : "93",
+        "tempName" : "Untitled1"
+    },
+    "relative_order" : 1,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}

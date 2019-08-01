@@ -1,0 +1,110 @@
+### 
+## ORD - PROPOSED REORGANIZATION NETWORK
+## This R Script has been created to investigate the network
+## Structure of the proposed ORD reorganization
+### 
+## N.L. Pollesch - pollesch.nathan@epa.gov - ORD/NHEERL/MED
+
+#### Packages and such ####
+library(igraph)
+library(networkD3)
+library(stringr)
+library(readxl)
+library(ggraph)
+
+#### Create Network ####
+## Load Reorg Edge List Workbook
+ORD_REORG <- read_excel("data/ORD-REORG.xlsx") #NLP Created this file by hand from https://intranet.ord.epa.gov/about-ord/proposed-reorganization 
+
+## Extract Edge List Object
+ORDEL<-as.data.frame(ORD_REORG[,1:2])
+
+## Create igraph object
+ORD<-graph_from_edgelist(as.matrix(ORDEL))
+
+## View in networkD3 package
+simpleNetwork(ORDEL)
+
+## View in igraph
+set.seed(1)
+par(bg="Black")
+plot(ORD)
+
+## Assign Center/Division/Branch status
+## 1=Center 2=Div 3=Branch ##NOTE THIS IS BASICALLY 'DEPTH' IN TREE
+V(ORD)$CDB<-str_count(names(V(ORD)),"-")+1 
+
+
+## Create short names
+V(ORD)$longName<-V(ORD)$name
+for(i in 1:length(V(ORD))){
+V(ORD)$shortName[i]<-strsplit(V(ORD)$name,split="-")[[i]][V(ORD)$CDB[i]]
+}
+
+## Assign colors by C/D/B
+CDBcols<-c("seagreen","springgreen","turquoise")
+V(ORD)$color<-CDBcols[V(ORD)$CDB]
+
+## Assign size by C/D/B
+V(ORD)$size<-(9/V(ORD)$CDB)
+
+## Change Edge Arrow size
+E(ORD)$arrow.size<-.3
+
+
+#### Visualize ####
+plot(ORD,vertex.label=V(ORD)$shortName,vertex.shape="none",
+     edge.curved=.2,  vertex.label.cex=.8,
+     vertex.label.color=c("SeaGreen","SpringGreen","Steelblue")[V(ORD)$CDB])
+
+plot(ORD,vertex.label=V(ORD)$shortName,vertex.shape="none",
+     edge.curved=.2,  vertex.label.cex=.8, layout=layout_as_tree,
+     vertex.label.color=c("SeaGreen","SpringGreen","Steelblue")[V(ORD)$CDB])
+
+
+layoutnew=layout.reingold.tilford(ORD,circular=T)
+plot(ORD,vertex.label=V(ORD)$shortName,vertex.shape="none",
+     edge.curved=.2,layout=layoutnew,  vertex.label.cex=.8,
+     vertex.label.color=c("SeaGreen","SpringGreen","Steelblue")[V(ORD)$CDB])
+
+#### VISUALIZATIONS USING GGRAPH ####
+
+ggraph(ORD, layout = 'dendrogram', circular = TRUE) + 
+  geom_edge_diagonal() + 
+  geom_node_point(aes(filter = leaf)) + 
+  coord_fixed() +
+
+
+ggraph(ORD, 'circlepack', weight = 'size') + 
+  geom_node_circle(aes(fill = depth), size = 0.25, n = 50) + 
+  coord_fixed()
+
+l <- ggraph(ORD, layout = 'partition', circular = TRUE)
+
+l + geom_node_arc_bar(aes(fill = depth)) + 
+  coord_fixed()
+
+# This one takes a bit
+l + geom_edge_diagonal(aes(width = ..index.., alpha = ..index..), lineend = 'round') + 
+  scale_edge_width(range = c(0.2, 1.5)) + 
+  geom_node_point(aes(colour = depth)) + 
+  coord_fixed()
+
+
+
+
+
+#### THINKING ABOUT DISTANCES ####
+summary(distances(ORD))
+sum(distances(ORD))
+mean(distances(ORD))
+table(V(ORD)$CDB)
+
+#### EXTRAS ####
+
+## Cluster by short random walks
+wc<-cluster_walktrap(ORD)
+members<-membership(wc)
+ORD_wc<-igraph_to_networkD3(ORD,group=members)
+forceNetwork(Links=ORD_wc$links,Nodes=ORD_wc$nodes,NodeID='name',Group='group')
+

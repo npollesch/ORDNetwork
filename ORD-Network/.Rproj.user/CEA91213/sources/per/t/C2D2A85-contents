@@ -1,0 +1,347 @@
+### 
+## ORD - PROPOSED REORGANIZATION NETWORK
+## This R Script has been created to investigate the network
+## Structure of the proposed ORD reorganization
+### 
+## N.L. Pollesch - pollesch.nathan@epa.gov - ORD/NHEERL/MED
+
+#### Packages and such ####
+library(igraph)
+library(stringr)
+library(readxl)
+library(ggraph)
+
+
+#### Create Network ####
+## Load Reorg Edge List Workbook
+ORD_REORG <- read_excel("data/ORD-REORG.xlsx") #NLP Created this file by hand from https://intranet.ord.epa.gov/about-ord/proposed-reorganization 
+
+## Extract Edge List Object
+ORDEL<-as.data.frame(ORD_REORG[,1:2])
+
+## Create igraph object
+ORD<-graph_from_edgelist(as.matrix(ORDEL))
+
+## View in igraph
+set.seed(1)
+par(bg="Black")
+plot(ORD)
+
+
+## Create short names
+V(ORD)$longName<-V(ORD)$name
+for(i in 1:length(V(ORD))){
+  V(ORD)$shortName[i]<-strsplit(V(ORD)$name,split="-")[[i]][V(ORD)$CDB[i]]
+}
+
+## Assign Center/Division/Branch status
+## 1=Center 2=Div 3=Branch ##NOTE THIS IS BASICALLY 'DEPTH' IN TREE
+V(ORD)$CDB<-str_count(names(V(ORD)),"-")+1 
+
+## Find All Branches
+V(ORD)[which(V(ORD)$CDB==2)]
+## Find Divisions with most branches and sort
+rev(sort(degree(ORD,V(ORD)[which(V(ORD)$CDB==2)],mode="out")))
+
+### Calculate centers with most branches
+##
+brByCen<-list()
+noBrByCen<-c()
+for(i in 2:length(names(V(ORD)[which(V(ORD)$CDB==1)]))){
+  brByCen[[i-1]]<-grep(names(V(ORD)[which(V(ORD)$CDB==1)])[i],names(degree(ORD,V(ORD)[which(V(ORD)$CDB==2)],mode="out")))}
+names(brByCen)<-names(V(ORD)[which(V(ORD)$CDB==1)])[2:8]
+
+for(i in 1:length(divByCen)){
+  noBrByCen[i]<-sum(degree(ORD,V(ORD)[which(V(ORD)$CDB==2)],mode="out")[brByCen[[i]]])  
+}
+names(noBrByCen)<-names(brByCen)
+
+### Calculate divisions with the most branchs
+##
+brByDiv<-list()
+noBrByDiv<-c()
+for(i in 1:length(names(V(ORD)[which(V(ORD)$CDB==2)]))){
+  brByDiv[[i]]<-grep(names(V(ORD)[which(V(ORD)$CDB==2)])[i],names(degree(ORD,V(ORD)[which(V(ORD)$CDB==2)],mode="out")))}
+names(brByDiv)<-names(V(ORD)[which(V(ORD)$CDB==2)])
+
+for(i in 1:length(brByDiv)){
+  noBrByDiv[i]<-sum(degree(ORD,V(ORD)[which(V(ORD)$CDB==2)],mode="out")[brByDiv[[i]]])  
+}
+names(noBrByDiv)<-names(brByDiv)
+
+noBrByCen
+noBrByDiv
+
+View(distances(ORD))
+
+
+## Assign colors by C/D/B
+CDBcols<-c("seagreen","springgreen","turquoise")
+V(ORD)$color<-CDBcols[V(ORD)$CDB]
+
+## Assign size by C/D/B
+V(ORD)$size<-(9/V(ORD)$CDB)
+
+## Change Edge Arrow size
+E(ORD)$arrow.size<-0
+E(ORD)$color<-"gray"
+
+#### Visualize ####
+plot(ORD,vertex.label=V(ORD)$shortName,vertex.shape="none",
+     edge.curved=.2,  vertex.label.cex=.8,
+     vertex.label.color=c("SeaGreen","SpringGreen","Steelblue")[V(ORD)$CDB])
+
+plot(ORD,vertex.label=V(ORD)$shortName,vertex.shape="none",
+     edge.curved=.2,  vertex.label.cex=.8, layout=layout_as_tree,
+     vertex.label.color=c("SeaGreen","SpringGreen","Steelblue")[V(ORD)$CDB])
+
+par(bg="white")
+layoutnew=layout.reingold.tilford(ORD,circular=T)
+plot(ORD,vertex.label=V(ORD)$shortName,vertex.shape="none",vertex.size=12,
+     edge.curved=0,layout=layoutnew, arrow.size<-0,vertex.label.cex=1/V(ORD)$CDB*.8,
+     vertex.label.color=c("SeaGreen","DarkGreen","Steelblue")[V(ORD)$CDB],vertex.color=c("SeaGreen","DarkGreen","Steelblue")[V(ORD)$CDB])
+
+par(bg="white")
+layoutnew=layout.reingold.tilford(ORD,circular=T)
+plot(ORD,layout=layoutnew, arrow.size<-0,vertex.label.cex=1/V(ORD)$CDB*.8,
+     #label.dist=1,
+     vertex.label="",
+     vertex.label.color=c("SeaGreen","DarkGreen","Steelblue")[V(ORD)$CDB],vertex.color=c("SeaGreen","DarkGreen","Steelblue")[V(ORD)$CDB])
+
+
+
+#### VISUALIZATIONS USING GGRAPH ####
+
+ggraph(ORD, layout = 'dendrogram', circular = TRUE) + 
+  geom_edge_diagonal() + 
+  geom_node_point(aes(filter = leaf)) + 
+  coord_fixed() + theme_void() + geom_node_point(aes(label = class))
+
+
+ggraph(ORD, 'circlepack', weight = 'size') + 
+  geom_node_circle(aes(fill = depth), size = 0.25, n = 50) + 
+  coord_fixed()+ theme_void() 
+#+ geom_node_text( aes(label=shortName, filter=leaf, fill=depth, size=size)) 
+
+l <- ggraph(ORD, layout = 'partition', circular = TRUE)
+
+l + geom_node_arc_bar(aes(fill = depth)) + 
+  coord_fixed()
+
+# This one takes a bit
+l + geom_edge_diagonal(aes(width = ..index.., alpha = ..index..), lineend = 'round') + 
+  scale_edge_width(range = c(0.2, 1.5)) + 
+  geom_node_point(aes(colour = depth)) + 
+  coord_fixed()+ theme_void()
+
+# Circular Layout with Labels
+myleaves=which(degree(ORD,mode="out")==0)
+nleaves=length(myleaves)
+V(ORD)$id[ myleaves ] = seq(1:nleaves)
+V(ORD)$angle= 90 - 360 * V(ORD)$id / nleaves
+# calculate the alignment of labels: right or left
+# If I am on the left part of the plot, my labels have currently an angle < -90
+V(ORD)$hjust<-ifelse( V(ORD)$angle < -90, 1, 0)
+# flip angle BY to make them readable
+V(ORD)$angle<-ifelse(V(ORD)$angle < -90, V(ORD)$angle+180, V(ORD)$angle)
+# angles for all non-leaves
+V(ORD)$angle[which(is.na(V(ORD)$angle))]<-0
+
+ggraph(ORD, layout = 'dendrogram',circular=T) + 
+  geom_edge_link(color="gray") +
+  geom_node_point(aes(colour=color, shape="circle", size=1/CDB))+
+  geom_node_text(aes( x = x*1.15, y=y*1.15,label=shortName, filter=leaf, angle = angle)) + theme_void() +
+  geom_node_text(aes(label=shortName, filter=!leaf, angle = 0), nudge_y=.1) + theme_void() +
+  expand_limits(x = c(-1.3, 1.3), y = c(-1.3, 1.3)) + 
+  theme(
+    legend.position="none",
+    plot.margin=unit(c(0,0,0,0),"cm"))
+  
+
+
+
+
+
+#### THINKING ABOUT DISTANCES ####
+summary(distances(ORD))
+sum(distances(ORD))
+mean(distances(ORD))
+table(V(ORD)$CDB)
+
+
+#### RANDOM GROUPS IN ORD AND DISTANCE GAINS####
+peeps<-length(V(ORD))
+g<-group.size(peeps)
+newedges<-group.edges(g)
+
+## New edges will be colored so old edges need a color attribute
+E(ORD)$color<-"gray"
+
+## Adds edges, creates graphs showing each group Graph Objects ##
+ORDGroups<-list()
+ORDGroups[[1]]<-ORD
+for(i in 1:length(newedges)){
+ORDGroups[[i+1]]<-add.edges(ORD,newedges[[i]],color=rainbow(length(newedges))[i])}
+
+## Cumulative ORD connectivity gains based on random grouping
+## Create cumulative group networks by adding edges
+ORDAll<-list()
+ORDAll[[1]]<-ORD
+for(i in 1:length(newedges)){
+  for(j in 1:i){
+    ORDAll[[i+1]]<-add.edges(ORDAll[[i]],newedges[[j]],color=rainbow(length(newedges))[j])}
+  }
+
+## Plot cumulative edges and print distances in graph
+par(bg="White")
+plot(ORDAll[[1]],vertex.label=V(ORD)$shortName,vertex.size=10,layout=layoutnew,vertex.label.cex=.5)
+
+for(i in 1:12){
+plot(ORDAll[[i]],vertex.label="",layout=layoutnew)
+  print(mean(distances(ORDAll[[i]])))}
+
+for(i in 1:12){
+plot(ORDAll[[i]],vertex.label="")}
+
+#### HERE! Need to loop and track connectivity gains for each random realization ####
+
+#### TRY FOR A GREEEEEEDY ALGORITHM ####
+## Use distance matrix, select randomly an edge with a distance of 6, add it
+gs<-group.size(peeps)
+gs
+#for(j in 1:sum(gs[,1]))
+
+V(ORD)$ingrp<-F
+ORDPRE<-list()
+ORDTEST<-list()
+ORDTEST[[1]]<-ORD
+for(j in 1:gs[2,1]){
+for(i in 1:(gs[2,2]-1)){
+if(i==1){
+  coStar<-c()
+  cast<-list()
+  ORDPRE[[i]]<-ORDTEST[[j]]
+s<-sample(length(which(distances(ORDPRE[[i]])==max(distances(ORDPRE[[i]])),arr.ind=F)),1)
+e<-which(distances(ORDPRE[[i]])==max(distances(ORDPRE[[i]])),arr.ind=T)[s,]
+bacon<-V(ORDPRE[[i]])$name[e[1]]}
+coStar[i]<-V(ORDPRE[[i]])$name[which.max(distances(ORDPRE[[i]],v=bacon))]
+cast[[i]]<-c(bacon,coStar)
+V(ORDPRE[[i]])$ingrp[match(cast[[i]],V(ORDPRE[[i]])$name)]<-rep(T,length(cast[[i]]))
+V(ORDPRE[[i]])$color[match(cast[[i]],V(ORDPRE[[i]])$name)]<-rep(rainbow(sum(gs[1,]))[j],length(cast[[i]]))
+ORDPRE[[i+1]]<-simplify(add.edges(ORDPRE[[i]],as.vector(combn(cast[[i]],2)),color=rainbow(sum(gs[1,]))[j]),edge.attr.comb="first")}
+if(i==(gs[2,2]-1)){ORDTEST[[j+1]]<-ORDPRE[[i+1]]}
+}
+
+##
+
+
+ORDPRE<-list()
+ORDTEST<-list()
+ORDTEST[[1]]<-ORD
+for(j in 1:gs[2,1]){
+  for(i in 1:(gs[2,2]-1)){
+    if(i==1){
+      coStar<-c()
+      cast<-list()
+      ORDPRE[[i]]<-ORDTEST[[j]]
+      ## Randomly choose a node that has an edge with maximal distance that is also not in a grp
+      bacon<-names(sample(which(distances(ORDPRE[[i]],v=V(ORDPRE[[i]])[is.na(V(ORDPRE[[i]])$grp)],to=V(ORDPRE[[i]])[is.na(V(ORDPRE[[i]])$grp)])==max(distances(ORDPRE[[i]],v=V(ORDPRE[[i]])[is.na(V(ORDPRE[[i]])$grp)],to=V(ORDPRE[[i]])[is.na(V(ORDPRE[[i]])$grp)])),arr.ind=T)[,1],1))}
+    coStar[i]<-names(V(ORDPRE[[i]])[sample(as.vector(V(ORDPRE[[i]])[which(distances(ORDPRE[[i]],v=bacon,to=V(ORDPRE[[i]])[is.na(V(ORDPRE[[i]])$grp)])==max(distances(ORDPRE[[i]],v=bacon,to=V(ORDPRE[[i]])[is.na(V(ORDPRE[[i]])$grp)])))]),1)])
+    cast[[i]]<-c(bacon,coStar)
+    V(ORDPRE[[i]])$ingrp[match(cast[[i]],V(ORDPRE[[i]])$name)]<-rep(T,length(cast[[i]]))
+    V(ORDPRE[[i]])$grp[match(cast[[i]],V(ORDPRE[[i]])$name)]<-rep(j,length(cast[[i]]))
+    V(ORDPRE[[i]])$color[match(cast[[i]],V(ORDPRE[[i]])$name)]<-rep(rainbow(sum(gs[1,]))[j],length(cast[[i]]))
+    ORDPRE[[i+1]]<-simplify(add.edges(ORDPRE[[i]],as.vector(combn(cast[[i]],2)),color=rainbow(sum(gs[1,]))[j]),edge.attr.comb="first")}
+  if(i==(gs[2,2]-1)){ORDTEST[[j+1]]<-ORDPRE[[i+1]]}
+}
+
+table(V(ORDTEST[[5]])$grp)
+
+for(i in 1:(gs[2,1]+1)){
+  plot(ORDTEST[[i]],vertex.label="")
+  #plot(ORDTEST[[i]],vertex.label="",layout=layoutnew)
+  print(mean(distances(ORDTEST[[i]])))
+}
+gs
+
+
+as.vector(names(V(ORD)[which(distances(ORDPRE[[i]],v=bacon,to=V(ORDPRE[[i]])[which(!V(ORDPRE[[i]])$ingrp)])==max(distances(ORDPRE[[i]],v=bacon,to=V(ORDPRE[[i]])[which(!V(ORDPRE[[i]])$ingrp)])),arr.ind=T)[,1]]))
+
+V(ORDPRE[[i]])[sample(as.vector(V(ORDPRE[[i]])[which(distances(ORDPRE[[i]],v=bacon,to=V(ORDPRE[[i]])[which(!V(ORDPRE[[i]])$ingrp)])==max(distances(ORDPRE[[i]],v=bacon,to=V(ORDPRE[[i]])[which(!V(ORDPRE[[i]])$ingrp)])))]),1)]
+
+    names(V(ORDPRE[[i]])[V(ORDPRE[[i]])$ingrp])
+
+sample(intersect(names(V(ORDPRE[[i]])[which(!V(ORDPRE[[i]])$ingrp)]),as.vector(names(V(ORDPRE[[i]])[which(distances(ORDPRE[[i]],v=bacon)==max(distances(ORDPRE[[i]],v=bacon)),arr.ind=T)[,1]]))),1)
+
+
+#### HERE July 23rd - NEED TO MAKE SURE NOONE GETS PUT 
+## IN TWO GROUPS, SO SHOULD FILTER BASED ON IF THE 
+## INDIVIDUAL IS IN A GROUP OR NOT US ingrp Attr 
+
+
+
+#### EXTRAS ####
+
+## Cluster by short random walks
+wc<-cluster_walktrap(ORD)
+members<-membership(wc)
+ORD_wc<-igraph_to_networkD3(ORD,group=members)
+forceNetwork(Links=ORD_wc$links,Nodes=ORD_wc$nodes,NodeID='name',Group='group')
+
+
+#### Make trees ####
+d=depth=2
+w=width=2
+plot(make_tree(sum(w^(0:d)),w))
+
+
+#### ANIMATE THE NETWORK ####
+####~~~ Animation of AOPwiki Growth ####
+library(magick)
+library(dplyr)
+library(purrr)
+##Formatting outputs
+library(stringr) #supplies a function to add leading zeros to strings (used in the plotting commands)
+library(latex2exp) #Allows for TeX commands in plots 
+##Library for 3d plotting
+library(plot3D)
+
+##Constructive plot of AOPwiki network 
+#define layout for network
+set.seed(1)
+fulllo<-layout.fruchterman.reingold(AOPg)
+## Loop for creating successive plots
+for(i in 1:153){
+  V(isgs[[153]])$color<-NA
+  V(isgs[[153]])[!is.na(match(V(isgs[[153]])$KE_EID,V(isgs[[i]])$KE_EID))]$color<-'blue'
+  E(isgs[[153]])$color<-NA
+  E(isgs[[153]])[match(as_ids(E(isgs[[i]])),as_ids(E(isgs[[153]])))]$color<-'white'
+  png(paste("images/networks/net_",str_pad(i, width=3, side="left", pad="0"),".png",sep=""),wid=800,hei=800)
+  par(col.main="white",bg="black")
+  plot(isgs[[153]],margin=c(-.05,-.05,-.05,-.05),layout=fulllo,vertex.label=NA, vertex.frame.color=NA, edge.arrow.size=.5,vertex.size=2,main="AOPwiki Network Evolution")
+  text(0,y=-1.1,paste("-- Network Summary -- \n Key Events:",KEno[i]," Key Event Relationships:",KERno[i]," Linear AOPs:",AOPno[i]),font=2,col="white")
+  dev.off()
+}
+
+
+list.files(path=paste(getwd(),"/images/networks",sep=""),pattern="*.png",full.names=T) %>%
+  map(image_read) %>%
+  image_join() %>%
+  image_animate(fps=4,loop=1) %>%
+  image_write("images/net_evolution.gif")
+
+## Plot of all AOPwiki sub-networks, does not maintain layout...previous plots do maintain layout
+for(i in 1:153){
+  png(paste("images/networks/net_",str_pad(i, width=3, side="left", pad="0"),".png",sep=""))
+  aplot(isgs[[i+1]],vsize=2)
+  dev.off()
+}
+list.files(path=paste(getwd(),"/images/networks",sep=""),pattern="*.png",full.names=T) %>%
+  map(image_read) %>%
+  image_join() %>%
+  image_animate(fps=4) %>%
+  image_write("images/nets.gif")
+
+
+
+

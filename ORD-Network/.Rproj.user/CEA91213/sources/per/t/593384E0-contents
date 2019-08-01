@@ -1,0 +1,50 @@
+
+## Groups of at most two different sizes
+## number of groups as close to number of group members as possible
+groups<-function(x,n=NA){
+  if(!is.na(n)){
+    extras<-x%%n
+    if(extras==0){print(paste(n," of ",x/n))
+      return(c(n,x/n))}
+    if(extras>0){print(paste(n-x%%n," of ",x%/%n," | ",x%%n, " of ",(x%/%n)+1))
+      return(rbind(c(n-x%%n,x%/%n),c(x%%n,(x%/%n)+1)))}
+  }
+  potgsize<-c(floor(sqrt(x)),ceiling(sqrt(x)))
+  if(potgsize[1]==potgsize[2]){
+    print(paste(potgsize[1]," of ",potgsize[1]))
+    return(c(potgsize[1],potgsize[1]))}
+  ifelse(sqrt(x)<mean(potgsize),gs<-potgsize[1],gs<-potgsize[2])
+  extras<-x-gs*floor(sqrt(x))
+  regs<-(x-(gs+1)*extras)/gs
+  if(regs==0){
+    print(paste(extras," of ",gs+1))
+    return(c(extras,gs+1))}
+  if(regs>0){print(paste((x-(gs+1)*extras)/gs," of ",gs," | ",extras, " of ",gs+1))
+    return(rbind(c(regs,gs),c(extras,gs+1)))}
+}
+
+## returns number of edges that get to be placed based on group sizes
+potEs<-function(x){
+  y<-ifelse(!is.null(dim(x)),sum((x[,2]-1)^2*x[,1]),(x[2]-1)^2*x[1])  
+  return(y)
+}
+
+## Number of edges by group size
+for(i in 1:100){
+ae[i]<-potEs(groups(100,i))}
+plot(ae)
+abline(h=potEs(groups(100)))
+
+
+## Randomly sample
+## Shuffle the nodes
+s<-sample(1:126,126,replace=F)
+## extract groups
+g<-groups(126)
+## Row of matrices for groups
+
+#### HERE - NEED TO FIX SO NOT ALWAYS TWO CASES... ####
+g1s<-matrix(s[1:(g[1,1]*g[1,2])],nrow=g[1,1])
+g2s<-matrix(s[((g[1,1]*g[1,2])+1):(length(s))],nrow=g[2,1])
+
+

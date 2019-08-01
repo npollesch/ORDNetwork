@@ -1,0 +1,203 @@
+### 
+## ORD - PROPOSED REORGANIZATION NETWORK
+## This R Script has been created to investigate the network
+## Structure of the proposed ORD reorganization
+### 
+## N.L. Pollesch - pollesch.nathan@epa.gov - ORD/NHEERL/MED
+
+#### Packages and such ####
+library(igraph)
+library(networkD3)
+library(stringr)
+library(readxl)
+library(ggraph)
+
+#### Create Network ####
+## Load Reorg Edge List Workbook
+ORD_REORG <- read_excel("data/ORD-REORG.xlsx") #NLP Created this file by hand from https://intranet.ord.epa.gov/about-ord/proposed-reorganization 
+
+## Extract Edge List Object
+ORDEL<-as.data.frame(ORD_REORG[,1:2])
+
+## Create igraph object
+ORD<-graph_from_edgelist(as.matrix(ORDEL))
+
+## View in networkD3 package
+simpleNetwork(ORDEL)
+
+## View in igraph
+set.seed(1)
+par(bg="Black")
+plot(ORD)
+
+## Assign Center/Division/Branch status
+## 1=Center 2=Div 3=Branch ##NOTE THIS IS BASICALLY 'DEPTH' IN TREE
+V(ORD)$CDB<-str_count(names(V(ORD)),"-")+1 
+
+
+## Create short names
+V(ORD)$longName<-V(ORD)$name
+for(i in 1:length(V(ORD))){
+V(ORD)$shortName[i]<-strsplit(V(ORD)$name,split="-")[[i]][V(ORD)$CDB[i]]
+}
+
+## Assign colors by C/D/B
+CDBcols<-c("seagreen","springgreen","turquoise")
+V(ORD)$color<-CDBcols[V(ORD)$CDB]
+
+## Assign size by C/D/B
+V(ORD)$size<-(9/V(ORD)$CDB)
+
+## Change Edge Arrow size
+E(ORD)$arrow.size<-.3
+
+
+#### Visualize ####
+plot(ORD,vertex.label=V(ORD)$shortName,vertex.shape="none",
+     edge.curved=.2,  vertex.label.cex=.8,
+     vertex.label.color=c("SeaGreen","SpringGreen","Steelblue")[V(ORD)$CDB])
+
+plot(ORD,vertex.label=V(ORD)$shortName,vertex.shape="none",
+     edge.curved=.2,  vertex.label.cex=.8, layout=layout_as_tree,
+     vertex.label.color=c("SeaGreen","SpringGreen","Steelblue")[V(ORD)$CDB])
+
+
+layoutnew=layout.reingold.tilford(ORD,circular=T)
+plot(ORDt11,vertex.label=V(ORD)$shortName,vertex.shape="none",
+     edge.curved=.2,layout=layoutnew,  vertex.label.cex=.8,
+     vertex.label.color=c("SeaGreen","SpringGreen","Steelblue")[V(ORD)$CDB])
+
+#### VISUALIZATIONS USING GGRAPH ####
+
+ggraph(ORD, layout = 'dendrogram', circular = TRUE) + 
+  geom_edge_diagonal() + 
+  geom_node_point(aes(filter = leaf)) + 
+  coord_fixed()
+
+
+ggraph(ORD, 'circlepack', weight = 'size') + 
+  geom_node_circle(aes(fill = depth), size = 0.25, n = 50) + 
+  coord_fixed()+ theme_void()
+
+l <- ggraph(ORD, layout = 'partition', circular = TRUE)
+
+l + geom_node_arc_bar(aes(fill = depth)) + 
+  coord_fixed()
+
+# This one takes a bit
+l + geom_edge_diagonal(aes(width = ..index.., alpha = ..index..), lineend = 'round') + 
+  scale_edge_width(range = c(0.2, 1.5)) + 
+  geom_node_point(aes(colour = depth)) + 
+  coord_fixed()
+
+
+
+
+
+#### THINKING ABOUT DISTANCES ####
+summary(distances(ORD))
+sum(distances(ORD))
+mean(distances(ORD))
+table(V(ORD)$CDB)
+
+
+#### RANDOM GROUPS IN ORD AND DISTANCE GAINS####
+peeps<-length(V(ORD))
+g<-group.size(peeps)
+newedges<-group.edges(g)
+
+## New edges will be colored so old edges need a color attribute
+E(ORD)$color<-"gray"
+
+## Adds edges, creates graphs showing each group Graph Objects ##
+ORDGroups<-list()
+ORDGroups[[1]]<-ORD
+for(i in 1:length(newedges)){
+ORDGroups[[i+1]]<-add.edges(ORD,newedges[[i]],color=rainbow(length(newedges))[i])}
+
+## Cumulative ORD connectivity gains based on random grouping
+## Create cumulative group networks by adding edges
+ORDAll<-list()
+ORDAll[[1]]<-ORD
+for(i in 1:length(newedges)){
+  for(j in 1:i){
+    ORDAll[[i+1]]<-add.edges(ORDAll[[i]],newedges[[j]],color=rainbow(length(newedges))[j])}
+  }
+
+## Plot cumulative edges and print distances in graph
+par(bg="Black")
+for(i in 1:12){
+plot(ORDAll[[i]],vertex.label="",layout=layoutnew)
+  print(mean(distances(ORDAll[[i]])))}
+for(i in 1:12){
+plot(ORDAll[[i]],vertex.label="")}
+
+#### HERE! Need to loop and track connectivity gains for each random realization ####
+
+
+
+#### EXTRAS ####
+
+## Cluster by short random walks
+wc<-cluster_walktrap(ORD)
+members<-membership(wc)
+ORD_wc<-igraph_to_networkD3(ORD,group=members)
+forceNetwork(Links=ORD_wc$links,Nodes=ORD_wc$nodes,NodeID='name',Group='group')
+
+
+#### Make trees ####
+d=depth=2
+w=width=2
+plot(make_tree(sum(w^(0:d)),w))
+
+
+#### ANIMATE THE NETWORK ####
+####~~~ Animation of AOPwiki Growth ####
+library(magick)
+library(dplyr)
+library(purrr)
+##Formatting outputs
+library(stringr) #supplies a function to add leading zeros to strings (used in the plotting commands)
+library(latex2exp) #Allows for TeX commands in plots 
+##Library for 3d plotting
+library(plot3D)
+
+##Constructive plot of AOPwiki network 
+#define layout for network
+set.seed(1)
+fulllo<-layout.fruchterman.reingold(AOPg)
+## Loop for creating successive plots
+for(i in 1:153){
+  V(isgs[[153]])$color<-NA
+  V(isgs[[153]])[!is.na(match(V(isgs[[153]])$KE_EID,V(isgs[[i]])$KE_EID))]$color<-'blue'
+  E(isgs[[153]])$color<-NA
+  E(isgs[[153]])[match(as_ids(E(isgs[[i]])),as_ids(E(isgs[[153]])))]$color<-'white'
+  png(paste("images/networks/net_",str_pad(i, width=3, side="left", pad="0"),".png",sep=""),wid=800,hei=800)
+  par(col.main="white",bg="black")
+  plot(isgs[[153]],margin=c(-.05,-.05,-.05,-.05),layout=fulllo,vertex.label=NA, vertex.frame.color=NA, edge.arrow.size=.5,vertex.size=2,main="AOPwiki Network Evolution")
+  text(0,y=-1.1,paste("-- Network Summary -- \n Key Events:",KEno[i]," Key Event Relationships:",KERno[i]," Linear AOPs:",AOPno[i]),font=2,col="white")
+  dev.off()
+}
+
+
+list.files(path=paste(getwd(),"/images/networks",sep=""),pattern="*.png",full.names=T) %>%
+  map(image_read) %>%
+  image_join() %>%
+  image_animate(fps=4,loop=1) %>%
+  image_write("images/net_evolution.gif")
+
+## Plot of all AOPwiki sub-networks, does not maintain layout...previous plots do maintain layout
+for(i in 1:153){
+  png(paste("images/networks/net_",str_pad(i, width=3, side="left", pad="0"),".png",sep=""))
+  aplot(isgs[[i+1]],vsize=2)
+  dev.off()
+}
+list.files(path=paste(getwd(),"/images/networks",sep=""),pattern="*.png",full.names=T) %>%
+  map(image_read) %>%
+  image_join() %>%
+  image_animate(fps=4) %>%
+  image_write("images/nets.gif")
+
+
+
+
