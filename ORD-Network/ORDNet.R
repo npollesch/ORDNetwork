@@ -11,6 +11,7 @@ library(stringr)
 library(readxl)
 library(ggraph)
 
+source('ORDNet_functions.R')
 
 #### Create Network ####
 ## Load Reorg Edge List Workbook
