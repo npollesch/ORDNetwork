@@ -12,3 +12,5 @@ Initial results showed that random grouping to was nearly as effective as the gr
 significantly easier to implement.  For the actual grouping exercise that motivated the project, a random algorithm 
 was paired with two metrics for evenness to ensure group distance was minimized and a mixture of upper and lower
 management was achieved in each subgroup.
+
+See the "Mix the managers" version of the .docx for the final project summary.
